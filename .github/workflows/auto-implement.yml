@@ -21,32 +21,32 @@ jobs:
 
       - name: Analyze Issue
         id: analyze
-        env:
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          # Call API to analyze
+          # Prepare request
+          cat > request.json << REQUEST
+          {
+            "model": "glm-5",
+            "messages": [{
+              "role": "user",
+              "content": "分析这个 GitHub Issue:\n\n标题: ${{ github.event.issue.title }}\n\n内容: ${{ github.event.issue.body }}\n\n请评估：\n1. 需求是否清晰？\n2. 实现复杂度？\n3. 是否可自动实现？"
+            }]
+          }
+          REQUEST
+          
+          # Call API
           response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d @- << 'EOF'
-          {
-            "model": "${{ secrets.MODEL || 'glm-5' }}",
-            "messages": [{
-              "role": "user",
-              "content": "分析这个 GitHub Issue:\n\n标题: ${{ env.ISSUE_TITLE }}\n\n内容: ${{ env.ISSUE_BODY }}\n\n请评估：\n1. 需求是否清晰？\n2. 实现复杂度？\n3. 是否可自动实现？"
-            }]
-          }
-          EOF
-          )
+            -d @request.json)
           
           echo "Response: $response"
           
+          # Extract content
           analysis=$(echo "$response" | jq -r '.choices[0].message.content // empty')
           
           if [ -z "$analysis" ]; then
-            echo "API call failed"
-            echo "analysis=API 调用失败，请检查配置" >> $GITHUB_OUTPUT
+            error=$(echo "$response" | jq -r '.error.message // "Unknown error"')
+            echo "analysis=❌ API 调用失败: $error" >> $GITHUB_OUTPUT
           else
             echo "analysis<<EOF" >> $GITHUB_OUTPUT
             echo "$analysis" >> $GITHUB_OUTPUT
