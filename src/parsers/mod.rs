@@ -7,6 +7,8 @@ mod json;
 mod csv;
 mod xml;
 mod html;
+mod pdf;
+mod docx;
 
 pub use markdown::MarkdownParser;
 pub use text::TextParser;
@@ -15,6 +17,8 @@ pub use json::JsonParser;
 pub use csv::CsvParser;
 pub use xml::XmlParser;
 pub use html::HtmlParser;
+pub use pdf::PdfParser;
+pub use docx::DocxParser;
 
 use anyhow::Result;
 use std::path::Path;
@@ -53,6 +57,8 @@ impl ParserRegistry {
             Arc::new(CsvParser::new()),
             Arc::new(XmlParser::new()),
             Arc::new(HtmlParser::new()),
+            Arc::new(PdfParser::new()),
+            Arc::new(DocxParser::new()),
         ];
 
         Self { parsers }
@@ -61,8 +67,8 @@ impl ParserRegistry {
     /// Get a parser for a file type
     pub fn get_parser(&self, ft: FileType) -> Option<&dyn Parser> {
         for parser in &self.parsers {
-            if parser.extensions().iter().any(|ext| {
-                ft.extensions().contains(&ext.as_str())
+            if parser.extensions().iter().any(|&ext| {
+                ft.extensions().contains(&ext)
             }) {
                 return Some(parser.as_ref());
             }

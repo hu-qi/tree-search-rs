@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use std::path::Path;
-use pulldown_cmark::{Parser as CmarkParser, Event, Tag, HeadingLevel};
+use pulldown_cmark::{Parser as CmarkParser, Event, Tag, TagEnd, HeadingLevel};
 
 use crate::tree::{TreeNode, Document};
 use super::Parser;
@@ -60,7 +60,7 @@ impl Parser for MarkdownParser {
 
         for event in parser {
             match event {
-                Event::Start(Tag::Heading(level)) => {
+                Event::Start(Tag::Heading { level, .. }) => {
                     // Save current node content
                     if !current_text.trim().is_empty() {
                         current_node.text = current_text.trim().to_string();
@@ -87,7 +87,7 @@ impl Parser for MarkdownParser {
                         }
                     }
                 }
-                Event::End(Tag::Heading(_)) => {
+                Event::End(TagEnd::Heading(_)) => {
                     // Create new node for this heading
                     node_counter += 1;
                     let node_id = format!("{}:node:{}", doc_id, node_counter);
@@ -101,7 +101,7 @@ impl Parser for MarkdownParser {
                     in_code_block = true;
                     current_code.clear();
                 }
-                Event::End(Tag::CodeBlock(_)) => {
+                Event::End(TagEnd::CodeBlock) => {
                     in_code_block = false;
                     if let Some(node) = node_stack.last_mut() {
                         node.code = Some(current_code.trim().to_string());

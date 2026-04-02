@@ -51,7 +51,7 @@ impl Parser for XmlParser {
         let mut doc = Document::new(doc_id.clone(), doc_name.clone(), "xml", path.to_path_buf());
 
         let mut reader = Reader::from_str(content);
-        reader.config().trim_text(true);
+        reader.config_mut().trim_text(true);
 
         let mut node_stack: Vec<TreeNode> = vec![TreeNode::new(format!("{}:root", doc_id), doc_name.clone())];
         let mut node_counter = 0;

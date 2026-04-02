@@ -52,7 +52,17 @@ impl Indexer {
 
         // Add to FTS index
         if let Some(fts) = &mut self.fts {
-            self.index_document(fts, &doc)?;
+            for node in doc.root.iter_dfs() {
+                fts.add_document(
+                    &node.node_id,
+                    &doc.doc_id,
+                    &node.title,
+                    node.summary.as_deref(),
+                    &node.text,
+                    node.code.as_deref(),
+                    node.front_matter.as_deref(),
+                )?;
+            }
         }
 
         Ok(Some(doc))

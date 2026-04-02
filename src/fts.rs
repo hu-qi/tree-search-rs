@@ -114,10 +114,10 @@ impl FtsIndex {
         code: Option<&str>,
         front_matter: Option<&str>,
     ) -> Result<()> {
+        let fields = self.fields();
         let writer = self.writer.as_mut()
             .ok_or_else(|| anyhow::anyhow!("No write transaction in progress"))?;
 
-        let fields = self.fields();
         let mut doc = TantivyDocument::new();
 
         doc.add_text(fields.node_id, node_id);
@@ -140,7 +140,7 @@ impl FtsIndex {
 
     /// Commit the write transaction
     pub fn commit(&mut self) -> Result<()> {
-        if let Some(writer) = self.writer.take() {
+        if let Some(mut writer) = self.writer.take() {
             writer.commit()?;
         }
         Ok(())
@@ -151,7 +151,7 @@ impl FtsIndex {
         let searcher = self.reader.searcher();
         let fields = self.fields();
 
-        let query_parser = QueryParser::for_index(&self.index, vec![
+        let mut query_parser = QueryParser::for_index(&self.index, vec![
             fields.title,
             fields.summary,
             fields.body,
@@ -168,7 +168,7 @@ impl FtsIndex {
 
         let mut hits = Vec::new();
         for (score, doc_address) in top_docs {
-            let doc = searcher.doc(doc_address)?;
+            let doc: TantivyDocument = searcher.doc(doc_address)?;
             let node_id = doc.get_first(fields.node_id)
                 .and_then(|v| v.as_str())
                 .unwrap_or("")

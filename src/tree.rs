@@ -130,6 +130,7 @@ impl Document {
         path: PathBuf,
     ) -> Self {
         let doc_id = doc_id.into();
+        let doc_name = doc_name.into();
         let root = TreeNode::new(format!("{}:root", doc_id), doc_name.clone());
         Self {
             doc_id,

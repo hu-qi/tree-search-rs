@@ -30,19 +30,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Path handling
 walkdir = "2"
 glob = "0.3"
-pathspec = "0.3"
 
 # Parsing - Markdown
 pulldown-cmark = "0.10"
-
-# Parsing - Code (tree-sitter)
-tree-sitter = "0.22"
-tree-sitter-python = "0.22"
-tree-sitter-javascript = "0.22"
-tree-sitter-java = "0.22"
-tree-sitter-go = "0.22"
-tree-sitter-cpp = "0.22"
-tree-sitter-rust = "0.22"
 
 # Parsing - HTML/XML
 scraper = "0.19"

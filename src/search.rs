@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
+use crate::tree::Document;
 
 /// Search mode selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,7 +101,7 @@ impl SearchEngine {
     }
 
     /// Select appropriate search mode based on document characteristics
-    pub fn auto_select_mode(documents: &[crate::Document]) -> SearchMode {
+    pub fn auto_select_mode(documents: &[Document]) -> SearchMode {
         if documents.is_empty() {
             return SearchMode::Flat;
         }
@@ -108,7 +109,7 @@ impl SearchEngine {
         // Calculate percentage of documents that benefit from tree
         let tree_benefit_count = documents
             .iter()
-            .filter(|d| d.tree_benefit())
+            .filter(|d: &&Document| d.tree_benefit())
             .count();
 
         let ratio = tree_benefit_count as f32 / documents.len() as f32;

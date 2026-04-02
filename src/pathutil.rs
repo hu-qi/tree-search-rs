@@ -155,7 +155,11 @@ pub fn discover_files(root: &Path, options: &DiscoveryOptions) -> Result<Vec<Pat
 /// Check if a path matches a glob pattern
 pub fn matches_pattern(path: &Path, pattern: &str) -> bool {
     let path_str = path.to_string_lossy();
-    glob_match::glob_match(pattern, &path_str)
+    // Simple glob matching using glob crate
+    match glob::Pattern::new(pattern) {
+        Ok(p) => p.matches(&path_str),
+        Err(_) => false,
+    }
 }
 
 #[cfg(test)]
