@@ -26,7 +26,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
         with:
-          model: openai/glm-5
+          model: openai/${{ secrets.MODEL || 'glm-5' }}
           prompt: |
             你是一个 Rust 项目维护者。分析这个 Issue：
 
