@@ -46,13 +46,15 @@ jobs:
             const branch = `ai-${context.payload.issue.number}`;
             
             try {
-              await github.rest.git.createRef({
+              // Create branch
+              const { data: ref } = await github.rest.git.createRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 ref: `refs/heads/${branch}`,
                 sha: context.sha
               });
               
+              // Create file
               await github.rest.repos.createOrUpdateFileContents({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -62,14 +64,23 @@ jobs:
                 branch: branch
               });
               
+              // Create PR
               const { data: pr } = await github.rest.pulls.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: `AI: #${context.payload.issue.number}`,
+                title: `[AI] Fix #${context.payload.issue.number}`,
                 head: branch,
                 base: 'main',
                 body: `${impl}\n\nCloses #${context.payload.issue.number}`
               });
+              
+              console.log(`PR created: ${pr.html_url}`);
             } catch (e) {
-              console.log(e.message);
+              console.log(`Error: ${e.message}`);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                body: `❌ 创建 PR 失败: ${e.message}`
+              });
             }
