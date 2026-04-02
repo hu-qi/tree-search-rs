@@ -30,6 +30,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Path handling
 walkdir = "2"
 glob = "0.3"
+ignore = "0.4"  # ripgrep's ignore library for fast file traversal
+num_cpus = "1"  # CPU count for parallel traversal
 
 # Parsing - Markdown
 pulldown-cmark = "0.10"
