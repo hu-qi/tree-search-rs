@@ -4,19 +4,21 @@ on:
   issues:
     types: [opened]
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
 jobs:
   implement:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Analyze Issue
         id: analyze
@@ -25,13 +27,16 @@ jobs:
           API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
-          # Call API
+          echo "Testing API connection..."
+          echo "API Base: ${API_BASE:0:30}..."
+          
           response=$(curl -s -X POST "$API_BASE/chat/completions" \
             -H "Authorization: Bearer $API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"glm-5\", \"messages\": [{\"role\": \"user\", \"content\": \"分析这个 Issue: $ISSUE_TITLE\"}]}")
+            -d '{"model": "glm-5", "messages": [{"role": "user", "content": "分析这个 Issue: '"$ISSUE_TITLE"'"}]}')
           
-          echo "Response: $response"
+          echo "Response (first 200 chars):"
+          echo "$response" | head -c 200
           
           content=$(echo "$response" | jq -r '.choices[0].message.content // "API调用失败"')
           echo "Content: $content"
@@ -41,6 +46,7 @@ jobs:
       - name: Comment Analysis
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const analysis = fs.readFileSync('analysis.txt', 'utf8');
@@ -62,7 +68,7 @@ jobs:
           response=$(curl -s -X POST "$API_BASE/chat/completions" \
             -H "Authorization: Bearer $API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"glm-5\", \"messages\": [{\"role\": \"user\", \"content\": \"为 Issue: $ISSUE_TITLE 生成实现方案。内容: $ISSUE_BODY\"}]}")
+            -d '{"model": "glm-5", "messages": [{"role": "user", "content": "为 Issue: '"$ISSUE_TITLE"' 生成实现方案。内容: '"$ISSUE_BODY"'"}]}')
           
           content=$(echo "$response" | jq -r '.choices[0].message.content // "生成失败"')
           echo "$content" > implementation.txt
@@ -70,6 +76,7 @@ jobs:
       - name: Create Branch and PR
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const implementation = fs.readFileSync('implementation.txt', 'utf8');
