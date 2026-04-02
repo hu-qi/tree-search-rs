@@ -20,11 +20,26 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Configure OpenCode
+        run: |
+          mkdir -p ~/.local/share/opencode
+          cat > ~/.local/share/opencode/config.json << 'CONFIG'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {
+              "openai": {
+                "options": {
+                  "baseURL": "${{ secrets.OPENAI_API_BASE }}"
+                }
+              }
+            }
+          }
+          CONFIG
+
       - name: Analyze and Implement Issue
         uses: anomalyco/opencode/github@latest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
         with:
           model: ${{ secrets.MODEL || 'glm-5' }}
           prompt: |
