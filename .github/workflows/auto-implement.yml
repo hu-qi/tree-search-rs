@@ -21,40 +21,46 @@ jobs:
 
       - name: Analyze Issue
         id: analyze
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          issue_title="${{ github.event.issue.title }}"
-          issue_body="${{ github.event.issue.body }}"
-          issue_number="${{ github.event.issue.number }}"
-          
+          # Call API to analyze
           response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "{
-              \"model\": \"${{ secrets.MODEL || 'glm-5' }}\",
-              \"messages\": [{
-                \"role\": \"user\",
-                \"content\": \"分析这个 GitHub Issue 并评估是否可以自动实现：\\n\\n标题: $issue_title\\n\\n内容: $issue_body\\n\\n请回答：\\n1. 需求是否清晰？\\n2. 实现复杂度如何？\\n3. 是否可以自动实现？\\n4. 如果可以，给出实现思路。\"
-              }]
-            }")
+            -d @- << 'EOF'
+          {
+            "model": "${{ secrets.MODEL || 'glm-5' }}",
+            "messages": [{
+              "role": "user",
+              "content": "分析这个 GitHub Issue:\n\n标题: ${{ env.ISSUE_TITLE }}\n\n内容: ${{ env.ISSUE_BODY }}\n\n请评估：\n1. 需求是否清晰？\n2. 实现复杂度？\n3. 是否可自动实现？"
+            }]
+          }
+          EOF
+          )
           
-          analysis=$(echo "$response" | jq -r '.choices[0].message.content')
-          echo "analysis<<EOF" >> $GITHUB_OUTPUT
-          echo "$analysis" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "Response: $response"
           
-          echo "## 分析结果" >> comment.md
-          echo "" >> comment.md
-          echo "$analysis" >> comment.md
+          analysis=$(echo "$response" | jq -r '.choices[0].message.content // empty')
+          
+          if [ -z "$analysis" ]; then
+            echo "API call failed"
+            echo "analysis=API 调用失败，请检查配置" >> $GITHUB_OUTPUT
+          else
+            echo "analysis<<EOF" >> $GITHUB_OUTPUT
+            echo "$analysis" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
 
       - name: Comment on Issue
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
-            const comment = fs.readFileSync('comment.md', 'utf8');
+            const analysis = `${{ steps.analyze.outputs.analysis }}`;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.issue.number,
-              body: comment
+              body: `## 🤖 自动分析结果\n\n${analysis}`
             });
