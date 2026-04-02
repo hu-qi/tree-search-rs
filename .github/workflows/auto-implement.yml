@@ -22,15 +22,26 @@ jobs:
       - name: Analyze Issue
         id: analyze
         run: |
-          # Analyze issue
-          response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
+          echo "API Base: ${{ secrets.OPENAI_API_BASE }}"
+          echo "Issue Title: ${{ github.event.issue.title }}"
+          
+          # Call API
+          response=$(curl -s -w "\n%{http_code}" -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"glm-5\", \"messages\": [{\"role\": \"user\", \"content\": \"分析这个 Issue，判断是否可以自动实现。标题: ${{ github.event.issue.title }}。内容: ${{ github.event.issue.body }}。回答：可行/不可行，并说明原因。\"}]}")
+            -d "{\"model\": \"glm-5\", \"messages\": [{\"role\": \"user\", \"content\": \"分析这个 Issue: ${{ github.event.issue.title }}\"}]}")
           
-          content=$(echo "$response" | jq -r '.choices[0].message.content')
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | head -n -1)
+          
+          echo "HTTP Code: $http_code"
+          echo "Response body (first 500 chars):"
+          echo "$body" | head -c 500
+          
+          content=$(echo "$body" | jq -r '.choices[0].message.content // "解析失败"')
+          echo "Content: $content"
+          
           echo "$content" > analysis.txt
-          echo "analysis=$content" >> $GITHUB_OUTPUT
 
       - name: Comment Analysis
         uses: actions/github-script@v7
@@ -45,21 +56,14 @@ jobs:
               body: `## 🤖 分析结果\n\n${analysis}`
             });
 
-      - name: Setup Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
       - name: Generate Implementation Plan
-        id: generate
         run: |
-          # Generate implementation plan
           response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"glm-5\", \"messages\": [{\"role\": \"user\", \"content\": \"为这个 Issue 生成实现方案。标题: ${{ github.event.issue.title }}。内容: ${{ github.event.issue.body }}。给出具体的修改建议。\"}]}")
+            -d "{\"model\": \"glm-5\", \"messages\": [{\"role\": \"user\", \"content\": \"为 Issue: ${{ github.event.issue.title }} 生成实现方案\"}]}")
           
-          content=$(echo "$response" | jq -r '.choices[0].message.content')
+          content=$(echo "$response" | jq -r '.choices[0].message.content // "生成失败"')
           echo "$content" > implementation.txt
 
       - name: Create Branch and PR
@@ -70,33 +74,43 @@ jobs:
             const implementation = fs.readFileSync('implementation.txt', 'utf8');
             const branch = `auto-fix-issue-${context.payload.issue.number}`;
             
-            // Create branch
-            const { data: ref } = await github.rest.git.createRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: `refs/heads/${branch}`,
-              sha: context.sha
-            });
-            
-            // Create file with implementation plan
-            const content = Buffer.from(implementation).toString('base64');
-            await github.rest.repos.createOrUpdateFileContents({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              path: `.auto-impl/issue-${context.payload.issue.number}.md`,
-              message: `Auto-implementation plan for issue #${context.payload.issue.number}`,
-              content: content,
-              branch: branch
-            });
-            
-            // Create PR
-            const { data: pr } = await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `[Auto] Fix #${context.payload.issue.number}: ${context.payload.issue.title}`,
-              head: branch,
-              base: 'main',
-              body: `## 自动实现 Issue #${context.payload.issue.number}\n\n### 原始需求\n${context.payload.issue.body}\n\n### 实现方案\n${implementation}\n\n---\n\n⚠️ 这是自动生成的 PR，请审查后再合并。\n\nCloses #${context.payload.issue.number}`
-            });
-            
-            console.log(`PR created: ${pr.html_url}`);
+            try {
+              // Create branch
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/heads/${branch}`,
+                sha: context.sha
+              });
+              
+              // Create file
+              const content = Buffer.from(implementation).toString('base64');
+              await github.rest.repos.createOrUpdateFileContents({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: `.auto-impl/issue-${context.payload.issue.number}.md`,
+                message: `Auto-impl plan for #${context.payload.issue.number}`,
+                content: content,
+                branch: branch
+              });
+              
+              // Create PR
+              const { data: pr } = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[Auto] Fix #${context.payload.issue.number}: ${context.payload.issue.title}`,
+                head: branch,
+                base: 'main',
+                body: `## 自动实现 #${context.payload.issue.number}\n\n${implementation}\n\nCloses #${context.payload.issue.number}`
+              });
+              
+              console.log(`PR: ${pr.html_url}`);
+            } catch (error) {
+              console.log(`Error: ${error.message}`);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                body: `❌ 创建 PR 失败: ${error.message}`
+              });
+            }
