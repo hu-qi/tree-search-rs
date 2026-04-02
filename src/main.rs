@@ -128,14 +128,74 @@ fn search_cmd(
             }
         }
     } else {
-        // No index, perform quick search
-        let engine = SearchEngine::new(search_mode);
-        let result = engine.search(&query);
+        // No index, perform quick search (parse and search on-the-fly)
+        use pathutil::{discover_files, DiscoveryOptions};
+        use parsers::ParserRegistry;
+        use tree::Document;
 
-        if result.documents.is_empty() {
-            println!("No results found. Try building an index first: treesearch index <path>");
+        println!("No index found. Performing quick search (may be slow)...");
+
+        // Discover files
+        let options = DiscoveryOptions::default();
+        let files = discover_files(&path, &options)?;
+
+        if files.is_empty() {
+            println!("No files found in path.");
+            return Ok(());
+        }
+
+        println!("Found {} files, searching...", files.len());
+
+        // Parse documents
+        let registry = ParserRegistry::new();
+        let mut documents: Vec<Document> = Vec::new();
+
+        for file in &files {
+            let ft = pathutil::FileType::from_path(file);
+            if let Some(parser) = registry.get_parser(ft) {
+                if let Ok(content) = std::fs::read_to_string(file) {
+                    if let Ok(doc) = parser.parse(&content, file) {
+                        documents.push(doc);
+                    }
+                }
+            }
+        }
+
+        println!("Parsed {} documents", documents.len());
+
+        // Create in-memory index
+        let mut index = FtsIndex::create_in_memory()?;
+        index.begin_write()?;
+
+        for doc in &documents {
+            for node in doc.root.iter_dfs() {
+                index.add_document(
+                    &node.node_id,
+                    &doc.doc_id,
+                    &node.title,
+                    node.summary.as_deref(),
+                    &node.text,
+                    node.code.as_deref(),
+                    node.front_matter.as_deref(),
+                )?;
+            }
+        }
+
+        index.commit()?;
+        index.reload()?;
+
+        // Search
+        let hits = index.search(&query, limit)?;
+
+        if hits.is_empty() {
+            println!("No results found.");
         } else {
-            println!("\nSearch completed in {}ms", result.search_time_ms);
+            println!("\nFound {} results:\n", hits.len());
+            for (i, hit) in hits.iter().enumerate() {
+                println!("{}. {} (score: {:.3})", i + 1, hit.title, hit.score);
+                println!("   Node: {}", hit.node_id);
+                println!();
+            }
         }
     }
 
