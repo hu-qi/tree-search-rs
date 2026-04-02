@@ -16,13 +16,34 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Analyze
+        id: analyze
         run: |
+          # Call API
           resp=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d '{"model":"glm-5","messages":[{"role":"user","content":"分析: ${{ github.event.issue.title }}"}]}')
+            -d '{"model":"glm-5","messages":[{"role":"user","content":"分析这个 Issue 并给出实现方案: ${{ github.event.issue.title }}"}]}')
           
-          echo "$resp" | jq -r '.choices[0].message.content' > analysis.txt
+          echo "Response length: ${#resp}"
+          
+          # Try to extract content
+          content=$(echo "$resp" | jq -r '.choices[0].message.content // empty')
+          
+          if [ -z "$content" ]; then
+            # Fallback: try reasoning_content
+            content=$(echo "$resp" | jq -r '.choices[0].message.reasoning_content // empty')
+          fi
+          
+          if [ -z "$content" ]; then
+            # Fallback: use raw response
+            content="API 响应解析失败，请查看 PR 中的完整响应。"
+            echo "$resp" > raw_response.txt
+          fi
+          
+          echo "$content" > analysis.txt
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$content" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Comment
         uses: actions/github-script@v7
@@ -34,33 +55,49 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.issue.number,
-              body: `## 分析\n\n${content}`
+              body: `## 🤖 分析\n\n${content}`
             });
+
+      - name: Generate Code
+        id: code
+        run: |
+          resp=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
+            -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"model":"glm-5","messages":[{"role":"user","content":"为以下需求生成 Rust 代码实现（只输出代码）: ${{ github.event.issue.title }}"}]}')
+          
+          code=$(echo "$resp" | jq -r '.choices[0].message.content // .choices[0].message.reasoning_content // "代码生成失败"')
+          echo "$code" > code.txt
 
       - name: Create PR
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const impl = fs.readFileSync('analysis.txt', 'utf8');
             const branch = `ai-${context.payload.issue.number}`;
             
             try {
               // Create branch
-              const { data: ref } = await github.rest.git.createRef({
+              await github.rest.git.createRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 ref: `refs/heads/${branch}`,
                 sha: context.sha
               });
               
-              // Create file
+              const analysis = fs.readFileSync('analysis.txt', 'utf8');
+              const code = fs.readFileSync('code.txt', 'utf8');
+              const raw = fs.existsSync('raw_response.txt') ? fs.readFileSync('raw_response.txt', 'utf8') : '';
+              
+              // Create implementation file
+              const content = `# Issue #${context.payload.issue.number}\n\n## 分析\n${analysis}\n\n## 代码实现\n\n\`\`\`rust\n${code}\n\`\`\`\n\n${raw ? '## 原始响应\n\`\`\`json\n' + raw + '\n\`\`\`' : ''}`;
+              
               await github.rest.repos.createOrUpdateFileContents({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 path: `impl-${context.payload.issue.number}.md`,
                 message: `Implementation for #${context.payload.issue.number}`,
-                content: Buffer.from(impl).toString('base64'),
+                content: Buffer.from(content).toString('base64'),
                 branch: branch
               });
               
@@ -68,13 +105,13 @@ jobs:
               const { data: pr } = await github.rest.pulls.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: `[AI] Fix #${context.payload.issue.number}`,
+                title: `[AI] Fix #${context.payload.issue.number}: ${context.payload.issue.title}`,
                 head: branch,
                 base: 'main',
-                body: `${impl}\n\nCloses #${context.payload.issue.number}`
+                body: `${analysis}\n\n---\n\n⚠️ 请审查代码后再合并。\n\nCloses #${context.payload.issue.number}`
               });
               
-              console.log(`PR created: ${pr.html_url}`);
+              console.log(`PR: ${pr.html_url}`);
             } catch (e) {
               console.log(`Error: ${e.message}`);
               await github.rest.issues.createComment({
