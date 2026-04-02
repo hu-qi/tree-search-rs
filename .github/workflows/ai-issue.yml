@@ -1,0 +1,75 @@
+name: AI Issue Handler
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  handle:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Analyze
+        run: |
+          resp=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
+            -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"model":"glm-5","messages":[{"role":"user","content":"分析: ${{ github.event.issue.title }}"}]}')
+          
+          echo "$resp" | jq -r '.choices[0].message.content' > analysis.txt
+
+      - name: Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const content = fs.readFileSync('analysis.txt', 'utf8');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: `## 分析\n\n${content}`
+            });
+
+      - name: Create PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const impl = fs.readFileSync('analysis.txt', 'utf8');
+            const branch = `ai-${context.payload.issue.number}`;
+            
+            try {
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/heads/${branch}`,
+                sha: context.sha
+              });
+              
+              await github.rest.repos.createOrUpdateFileContents({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: `impl-${context.payload.issue.number}.md`,
+                message: `Implementation for #${context.payload.issue.number}`,
+                content: Buffer.from(impl).toString('base64'),
+                branch: branch
+              });
+              
+              const { data: pr } = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `AI: #${context.payload.issue.number}`,
+                head: branch,
+                base: 'main',
+                body: `${impl}\n\nCloses #${context.payload.issue.number}`
+              });
+            } catch (e) {
+              console.log(e.message);
+            }
