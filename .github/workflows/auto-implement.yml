@@ -18,35 +18,29 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Analyze Issue
         id: analyze
-        env:
-          API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
-          echo "Testing API connection..."
-          echo "API Base: ${API_BASE:0:30}..."
+          # Create request JSON
+          cat > req.json << EOF
+          {"model": "glm-5", "messages": [{"role": "user", "content": "分析这个 Issue: ${{ github.event.issue.title }}"}]}
+          EOF
           
-          response=$(curl -s -X POST "$API_BASE/chat/completions" \
-            -H "Authorization: Bearer $API_KEY" \
+          # Call API
+          response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
+            -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d '{"model": "glm-5", "messages": [{"role": "user", "content": "分析这个 Issue: '"$ISSUE_TITLE"'"}]}')
+            -d @req.json)
           
-          echo "Response (first 200 chars):"
-          echo "$response" | head -c 200
+          echo "Response: $response"
           
           content=$(echo "$response" | jq -r '.choices[0].message.content // "API调用失败"')
-          echo "Content: $content"
-          
           echo "$content" > analysis.txt
 
       - name: Comment Analysis
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const analysis = fs.readFileSync('analysis.txt', 'utf8');
@@ -58,17 +52,15 @@ jobs:
             });
 
       - name: Generate Implementation
-        id: generate
-        env:
-          API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          response=$(curl -s -X POST "$API_BASE/chat/completions" \
-            -H "Authorization: Bearer $API_KEY" \
+          cat > req.json << EOF
+          {"model": "glm-5", "messages": [{"role": "user", "content": "为 Issue: ${{ github.event.issue.title }} 生成实现方案。内容: ${{ github.event.issue.body }}"}]}
+          EOF
+          
+          response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
+            -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d '{"model": "glm-5", "messages": [{"role": "user", "content": "为 Issue: '"$ISSUE_TITLE"' 生成实现方案。内容: '"$ISSUE_BODY"'"}]}')
+            -d @req.json)
           
           content=$(echo "$response" | jq -r '.choices[0].message.content // "生成失败"')
           echo "$content" > implementation.txt
@@ -76,14 +68,12 @@ jobs:
       - name: Create Branch and PR
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const implementation = fs.readFileSync('implementation.txt', 'utf8');
             const branch = `auto-fix-issue-${context.payload.issue.number}`;
             
             try {
-              // Create branch
               await github.rest.git.createRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -91,7 +81,6 @@ jobs:
                 sha: context.sha
               });
               
-              // Create file
               const content = Buffer.from(implementation).toString('base64');
               await github.rest.repos.createOrUpdateFileContents({
                 owner: context.repo.owner,
@@ -102,7 +91,6 @@ jobs:
                 branch: branch
               });
               
-              // Create PR
               const { data: pr } = await github.rest.pulls.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
