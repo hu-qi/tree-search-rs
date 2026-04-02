@@ -22,10 +22,8 @@ jobs:
       - name: Analyze Issue
         id: analyze
         run: |
-          # Create request JSON
-          cat > req.json << EOF
-          {"model": "glm-5", "messages": [{"role": "user", "content": "分析这个 Issue: ${{ github.event.issue.title }}"}]}
-          EOF
+          # Create request
+          printf '{"model":"glm-5","messages":[{"role":"user","content":"分析这个 Issue: ${{ github.event.issue.title }}"}]}' > req.json
           
           # Call API
           response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
@@ -53,9 +51,7 @@ jobs:
 
       - name: Generate Implementation
         run: |
-          cat > req.json << EOF
-          {"model": "glm-5", "messages": [{"role": "user", "content": "为 Issue: ${{ github.event.issue.title }} 生成实现方案。内容: ${{ github.event.issue.body }}"}]}
-          EOF
+          printf '{"model":"glm-5","messages":[{"role":"user","content":"为 Issue: ${{ github.event.issue.title }} 生成实现方案"}]}' > req.json
           
           response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
