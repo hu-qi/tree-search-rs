@@ -4,38 +4,31 @@ on:
   issues:
     types: [opened]
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
 jobs:
   handle:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
 
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Analyze Codebase
-        id: context
-        run: |
-          # Get minimal structure
-          find . -name "*.rs" -type f | head -10 > context.txt
 
       - name: Analyze Issue
         run: |
-          context=$(cat context.txt | head -100)
-          
           resp=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d '{"model":"glm-5","messages":[{"role":"user","content":"分析这个 Issue 并给出实现方案。项目:'"$context"'. Issue: ${{ github.event.issue.title }}"}],"temperature":0.3}')
+            -d '{"model":"glm-5","messages":[{"role":"user","content":"分析 Issue: ${{ github.event.issue.title }}. 内容: ${{ github.event.issue.body }}"}]}')
           
-          echo "Response: $resp"
-          echo "$resp" | jq -r '.choices[0].message.content // "分析失败"' > analysis.txt
+          echo "API Response: $resp"
+          
+          content=$(echo "$resp" | jq -r '.choices[0].message.content // "分析失败"')
+          echo "$content" > analysis.txt
 
-      - name: Comment Analysis
+      - name: Comment
         uses: actions/github-script@v7
         with:
           script: |
@@ -45,49 +38,17 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.issue.number,
-              body: `## 🤖 分析结果\n\n${content}`
+              body: `## 🤖 分析\n\n${content}`
             });
 
-      - name: Generate Code Changes
-        id: code
+      - name: Generate Code
         run: |
-          analysis=$(cat analysis.txt)
-          
           resp=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "{\"model\":\"glm-5\",\"messages\":[{\"role\":\"user\",\"content\":\"基于以下分析，生成具体的 Rust 代码修改。只输出代码，不要解释。\\n\\n$analysis\"}],\"temperature\":0.1}")
+            -d '{"model":"glm-5","messages":[{"role":"user","content":"为 Issue: ${{ github.event.issue.title }} 生成 Rust 代码实现"}]}')
           
-          code=$(echo "$resp" | jq -r '.choices[0].message.content')
-          echo "$code" > code_changes.txt
-          
-          # Check if code is valid
-          if echo "$code" | grep -q "fn\|struct\|impl\|use"; then
-            echo "has_code=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_code=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Apply Changes
-        if: steps.code.outputs.has_code == 'true'
-        run: |
-          # Create implementation file
-          mkdir -p src/auto_impl
-          cat code_changes.txt > src/auto_impl/issue_${{ github.event.issue.number }}.rs
-          
-          # Add mod to lib.rs or main.rs
-          if [ -f src/lib.rs ]; then
-            echo "pub mod auto_impl;" >> src/lib.rs
-            mkdir -p src/auto_impl
-            echo "pub mod issue_${{ github.event.issue.number }};" > src/auto_impl/mod.rs
-          fi
-
-      - name: Run Tests
-        if: steps.code.outputs.has_code == 'true'
-        continue-on-error: true
-        run: |
-          cargo check 2>&1 | head -50 || echo "Check failed"
-          cargo test 2>&1 | head -50 || echo "Tests failed"
+          echo "$resp" | jq -r '.choices[0].message.content // "生成失败"' > code.txt
 
       - name: Create PR
         uses: actions/github-script@v7
@@ -97,7 +58,6 @@ jobs:
             const branch = `ai-${context.payload.issue.number}`;
             
             try {
-              // Create branch
               await github.rest.git.createRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -105,37 +65,28 @@ jobs:
                 sha: context.sha
               });
               
-              // Commit changes
               const analysis = fs.readFileSync('analysis.txt', 'utf8');
-              const code = fs.readFileSync('code_changes.txt', 'utf8');
+              const code = fs.readFileSync('code.txt', 'utf8');
               
-              // Create implementation doc
               await github.rest.repos.createOrUpdateFileContents({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                path: `docs/impl-${context.payload.issue.number}.md`,
-                message: `Implementation for #${context.payload.issue.number}`,
-                content: Buffer.from(`# Implementation\n\n${analysis}\n\n## Code\n\n\`\`\`rust\n${code}\n\`\`\``).toString('base64'),
+                path: `impl-${context.payload.issue.number}.md`,
+                message: `Impl #${context.payload.issue.number}`,
+                content: Buffer.from(`# Analysis\n${analysis}\n\n# Code\n\`\`\`rust\n${code}\n\`\`\``).toString('base64'),
                 branch: branch
               });
               
-              // Create PR
               const { data: pr } = await github.rest.pulls.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: `[AI] Fix #${context.payload.issue.number}: ${context.payload.issue.title}`,
+                title: `[AI] Fix #${context.payload.issue.number}`,
                 head: branch,
                 base: 'main',
-                body: `## 自动实现 #${context.payload.issue.number}\n\n### 分析\n${analysis}\n\n### 代码\n\`\`\`rust\n${code}\n\`\`\`\n\n---\n\n⚠️ 请审查代码后再合并。\n\nCloses #${context.payload.issue.number}`
+                body: `${analysis}\n\nCloses #${context.payload.issue.number}`
               });
               
               console.log(`PR: ${pr.html_url}`);
             } catch (e) {
-              console.log(`Error: ${e.message}`);
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.payload.issue.number,
-                body: `❌ 创建 PR 失败: ${e.message}`
-              });
+              console.log(e.message);
             }
