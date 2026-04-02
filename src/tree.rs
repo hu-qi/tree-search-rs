@@ -67,6 +67,27 @@ impl TreeNode {
         None
     }
 
+    /// Find path from root to a node (returns path of node IDs)
+    pub fn find_path_to(&self, node_id: &str) -> Option<Vec<String>> {
+        self.find_path_to_inner(node_id, vec![])
+    }
+
+    fn find_path_to_inner(&self, node_id: &str, mut path: Vec<String>) -> Option<Vec<String>> {
+        path.push(self.node_id.clone());
+
+        if self.node_id == node_id {
+            return Some(path);
+        }
+
+        for child in &self.children {
+            if let Some(found) = child.find_path_to_inner(node_id, path.clone()) {
+                return Some(found);
+            }
+        }
+
+        None
+    }
+
     /// Collect all node IDs in subtree
     pub fn collect_node_ids(&self) -> Vec<String> {
         let mut ids = vec![self.node_id.clone()];
