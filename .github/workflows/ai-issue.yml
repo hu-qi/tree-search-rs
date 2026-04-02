@@ -20,21 +20,8 @@ jobs:
       - name: Analyze Codebase
         id: context
         run: |
-          # Get project structure
-          echo "## Project Structure" > context.txt
-          find . -name "*.rs" -type f | head -20 >> context.txt
-          echo "" >> context.txt
-          
-          # Get main source files
-          echo "## src/main.rs" >> context.txt
-          head -50 src/main.rs 2>/dev/null >> context.txt || echo "Not found" >> context.txt
-          echo "" >> context.txt
-          
-          # Get lib if exists
-          if [ -f src/lib.rs ]; then
-            echo "## src/lib.rs" >> context.txt
-            head -50 src/lib.rs >> context.txt
-          fi
+          # Get minimal structure
+          find . -name "*.rs" -type f | head -10 > context.txt
 
       - name: Analyze Issue
         run: |
