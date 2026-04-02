@@ -61,6 +61,9 @@ jobs:
       - name: Generate Code
         id: code
         run: |
+          # Wait to avoid rate limit
+          sleep 2
+          
           resp=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
