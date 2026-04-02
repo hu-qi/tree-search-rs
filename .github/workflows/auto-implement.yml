@@ -1,0 +1,60 @@
+name: Auto Implement Issue
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Analyze Issue
+        id: analyze
+        run: |
+          issue_title="${{ github.event.issue.title }}"
+          issue_body="${{ github.event.issue.body }}"
+          issue_number="${{ github.event.issue.number }}"
+          
+          response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
+            -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"model\": \"${{ secrets.MODEL || 'glm-5' }}\",
+              \"messages\": [{
+                \"role\": \"user\",
+                \"content\": \"分析这个 GitHub Issue 并评估是否可以自动实现：\\n\\n标题: $issue_title\\n\\n内容: $issue_body\\n\\n请回答：\\n1. 需求是否清晰？\\n2. 实现复杂度如何？\\n3. 是否可以自动实现？\\n4. 如果可以，给出实现思路。\"
+              }]
+            }")
+          
+          analysis=$(echo "$response" | jq -r '.choices[0].message.content')
+          echo "analysis<<EOF" >> $GITHUB_OUTPUT
+          echo "$analysis" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "## 分析结果" >> comment.md
+          echo "" >> comment.md
+          echo "$analysis" >> comment.md
+
+      - name: Comment on Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comment = fs.readFileSync('comment.md', 'utf8');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: comment
+            });
