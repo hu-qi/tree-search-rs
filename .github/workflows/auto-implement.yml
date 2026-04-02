@@ -25,17 +25,24 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"model\": \"glm-5\", \"messages\": [{\"role\": \"user\", \"content\": \"分析这个 Issue: ${{ github.event.issue.title }}\"}]}")
           
-          echo "$response"
+          echo "API Response:"
+          echo "$response" | head -c 500
           
-          # Save to file
-          echo "$response" | jq -r '.choices[0].message.content' > analysis.txt || echo "解析失败" > analysis.txt
+          # Extract content
+          content=$(echo "$response" | jq -r '.choices[0].message.content')
+          
+          if [ -z "$content" ] || [ "$content" = "null" ]; then
+            echo "analysis=API 调用失败，请查看 Actions 日志" > analysis.txt
+          else
+            echo "analysis=$content" > analysis.txt
+          fi
 
       - name: Comment on Issue
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const analysis = fs.readFileSync('analysis.txt', 'utf8');
+            const analysis = fs.readFileSync('analysis.txt', 'utf8').replace('analysis=', '');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
