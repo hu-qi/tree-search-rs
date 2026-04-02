@@ -15,52 +15,30 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Analyze Issue
         id: analyze
         run: |
-          # Prepare request
-          cat > request.json << REQUEST
-          {
-            "model": "glm-5",
-            "messages": [{
-              "role": "user",
-              "content": "分析这个 GitHub Issue:\n\n标题: ${{ github.event.issue.title }}\n\n内容: ${{ github.event.issue.body }}\n\n请评估：\n1. 需求是否清晰？\n2. 实现复杂度？\n3. 是否可自动实现？"
-            }]
-          }
-          REQUEST
-          
           # Call API
           response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d @request.json)
+            -d "{\"model\": \"glm-5\", \"messages\": [{\"role\": \"user\", \"content\": \"分析这个 Issue: ${{ github.event.issue.title }}\"}]}")
           
-          echo "Response: $response"
+          echo "$response"
           
-          # Extract content
-          analysis=$(echo "$response" | jq -r '.choices[0].message.content // empty')
-          
-          if [ -z "$analysis" ]; then
-            error=$(echo "$response" | jq -r '.error.message // "Unknown error"')
-            echo "analysis=❌ API 调用失败: $error" >> $GITHUB_OUTPUT
-          else
-            echo "analysis<<EOF" >> $GITHUB_OUTPUT
-            echo "$analysis" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-          fi
+          # Save to file
+          echo "$response" | jq -r '.choices[0].message.content' > analysis.txt || echo "解析失败" > analysis.txt
 
       - name: Comment on Issue
         uses: actions/github-script@v7
         with:
           script: |
-            const analysis = `${{ steps.analyze.outputs.analysis }}`;
+            const fs = require('fs');
+            const analysis = fs.readFileSync('analysis.txt', 'utf8');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.issue.number,
-              body: `## 🤖 自动分析结果\n\n${analysis}`
+              body: `## 🤖 分析结果\n\n${analysis}`
             });
