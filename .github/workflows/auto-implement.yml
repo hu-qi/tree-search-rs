@@ -4,44 +4,42 @@ on:
   issues:
     types: [opened]
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-
 jobs:
   implement:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Analyze Issue
         id: analyze
         run: |
-          # Create request
-          printf '{"model":"glm-5","messages":[{"role":"user","content":"分析这个 Issue: ${{ github.event.issue.title }}"}]}' > req.json
-          
-          # Call API
           response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d @req.json)
+            -d "{\"model\": \"glm-5\", \"messages\": [{\"role\": \"user\", \"content\": \"分析这个 Issue: ${{ github.event.issue.title }}\"}]}")
           
-          echo "Response: $response"
+          echo "$response"
           
-          content=$(echo "$response" | jq -r '.choices[0].message.content // "API调用失败"')
-          echo "$content" > analysis.txt
+          content=$(echo "$response" | jq -r '.choices[0].message.content')
+          
+          if [ -z "$content" ] || [ "$content" = "null" ]; then
+            echo "analysis=API 调用失败，请查看 Actions 日志" > analysis.txt
+          else
+            echo "analysis=$content" > analysis.txt
+          fi
 
       - name: Comment Analysis
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const analysis = fs.readFileSync('analysis.txt', 'utf8');
+            const analysis = fs.readFileSync('analysis.txt', 'utf8').replace('analysis=', '');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -50,15 +48,14 @@ jobs:
             });
 
       - name: Generate Implementation
+        id: generate
         run: |
-          printf '{"model":"glm-5","messages":[{"role":"user","content":"为 Issue: ${{ github.event.issue.title }} 生成实现方案"}]}' > req.json
-          
           response=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d @req.json)
+            -d "{\"model\": \"glm-5\", \"messages\": [{\"role\": \"user\", \"content\": \"为 Issue: ${{ github.event.issue.title }} 生成实现方案\"}]}")
           
-          content=$(echo "$response" | jq -r '.choices[0].message.content // "生成失败"')
+          content=$(echo "$response" | jq -r '.choices[0].message.content')
           echo "$content" > implementation.txt
 
       - name: Create Branch and PR
@@ -70,6 +67,7 @@ jobs:
             const branch = `auto-fix-issue-${context.payload.issue.number}`;
             
             try {
+              // Create branch
               await github.rest.git.createRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -77,6 +75,7 @@ jobs:
                 sha: context.sha
               });
               
+              // Create file with implementation plan
               const content = Buffer.from(implementation).toString('base64');
               await github.rest.repos.createOrUpdateFileContents({
                 owner: context.repo.owner,
@@ -87,16 +86,23 @@ jobs:
                 branch: branch
               });
               
+              // Create PR
               const { data: pr } = await github.rest.pulls.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: `[Auto] Fix #${context.payload.issue.number}: ${context.payload.issue.title}`,
                 head: branch,
                 base: 'main',
-                body: `## 自动实现 #${context.payload.issue.number}\n\n${implementation}\n\nCloses #${context.payload.issue.number}`
+                body: `## 自动实现 #${context.payload.issue.number}\n\n### 实现方案\n${implementation}\n\n---\n\n⚠️ 这是自动生成的 PR，请审查后再合并。\n\nCloses #${context.payload.issue.number}`
               });
               
-              console.log(`PR: ${pr.html_url}`);
+              console.log(`PR created: ${pr.html_url}`);
             } catch (error) {
               console.log(`Error: ${error.message}`);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                body: `❌ 创建 PR 失败: ${error.message}`
+              });
             }
