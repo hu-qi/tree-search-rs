@@ -38,14 +38,15 @@ jobs:
 
       - name: Analyze Issue
         run: |
-          context=$(cat context.txt)
+          context=$(cat context.txt | head -100)
           
           resp=$(curl -s -X POST "${{ secrets.OPENAI_API_BASE }}/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "{\"model\":\"glm-5\",\"messages\":[{\"role\":\"user\",\"content\":\"分析这个 Issue 并给出实现方案。\\n\\n项目代码结构:\\n$context\\n\\nIssue: ${{ github.event.issue.title }}\\n内容: ${{ github.event.issue.body }}\\n\\n请给出：\\n1. 需要修改的文件\\n2. 具体修改内容（用 Rust 代码）\\n3. 简要说明\"}],\"temperature\":0.3}")
+            -d '{"model":"glm-5","messages":[{"role":"user","content":"分析这个 Issue 并给出实现方案。项目:'"$context"'. Issue: ${{ github.event.issue.title }}"}],"temperature":0.3}')
           
-          echo "$resp" | jq -r '.choices[0].message.content' > analysis.txt
+          echo "Response: $resp"
+          echo "$resp" | jq -r '.choices[0].message.content // "分析失败"' > analysis.txt
 
       - name: Comment Analysis
         uses: actions/github-script@v7
