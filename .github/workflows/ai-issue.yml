@@ -3,6 +3,12 @@ name: AI Issue Handler
 on:
   issues:
     types: [opened]
+  workflow_dispatch:
+    inputs:
+      test_issue_number:
+        description: 'Issue number to test with'
+        required: false
+        default: ''
 
 jobs:
   handle:
