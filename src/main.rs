@@ -19,8 +19,9 @@ use search::SearchMode;
 
 #[derive(Parser)]
 #[command(name = "treesearch")]
-#[command(about = "Tree-aware document search engine")]
+#[command(about = "Tree-aware document search engine", long_about = None)]
 #[command(version)]
+#[command(next_help_heading = "Commands")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -29,28 +30,36 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Quick search (auto-build index if needed)
+    ///
+    /// Examples:
+    ///   treesearch search "function" ./src
+    ///   treesearch search "README" . --mode tree -n 20
     Search {
-        /// Search query
+        /// Search query string
         query: String,
-        /// Path to search
+        /// Path to search (default: current directory)
         #[arg(default_value = ".")]
         path: PathBuf,
-        /// Search mode (auto, flat, tree)
+        /// Search mode: auto (default), flat, or tree
         #[arg(short, long, default_value = "auto")]
         mode: SearchModeConfig,
-        /// Database path
+        /// Database path (default: .treesearch.db in search path)
         #[arg(short, long)]
         db: Option<PathBuf>,
-        /// Maximum results
+        /// Maximum number of results to return
         #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
     },
-    /// Build index
+    /// Build search index for faster searches
+    ///
+    /// Examples:
+    ///   treesearch index ./src ./docs
+    ///   treesearch index . --max-files 50000
     Index {
         /// Paths to index
         #[arg(required = true)]
         paths: Vec<PathBuf>,
-        /// Database path
+        /// Database path (default: .treesearch.db in first path)
         #[arg(short, long)]
         db: Option<PathBuf>,
         /// Maximum nodes per document
@@ -60,7 +69,10 @@ enum Commands {
         #[arg(long, default_value = "10000")]
         max_files: usize,
     },
-    /// Show document info
+    /// Show document structure and metadata
+    ///
+    /// Examples:
+    ///   treesearch info README.md
     Info {
         /// Path to document
         path: PathBuf,
