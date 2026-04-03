@@ -122,6 +122,8 @@ impl Default for DiscoveryOptions {
 /// 2. Built-in .gitignore support
 /// 3. Optimized filtering
 pub fn discover_files(root: &Path, options: &DiscoveryOptions) -> Result<Vec<PathBuf>> {
+    use ignore::overrides::Override;
+
     let mut files = Vec::new();
 
     let mut builder = WalkBuilder::new(root);
@@ -135,9 +137,14 @@ pub fn discover_files(root: &Path, options: &DiscoveryOptions) -> Result<Vec<Pat
         .hidden(false)  // Include hidden files
         .threads(num_cpus::get());  // Parallel traversal
 
-    // Add custom ignore patterns
-    for pattern in &options.exclude {
-        builder.add_ignore(pattern);
+    // Build override for custom exclusion patterns
+    if !options.exclude.is_empty() {
+        let mut override_builder = ignore::overrides::OverrideBuilder::new(root);
+        for pattern in &options.exclude {
+            // Add exclusion pattern with '!' prefix to exclude
+            override_builder.add(&format!("!{}", pattern))?;
+        }
+        builder.overrides(override_builder.build()?);
     }
 
     for result in builder.build() {
