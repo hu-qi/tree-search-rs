@@ -1,6 +1,6 @@
 [package]
 name = "tree-search-rs"
-version = "1.0.0"
+version = "1.4.0"
 edition = "2021"
 authors = ["huqi <huqi1024@gmail.com>"]
 description = "Tree-aware document search engine with Tantivy FTS"
