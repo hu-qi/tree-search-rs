@@ -268,10 +268,21 @@ fn info_cmd(path: PathBuf) -> Result<()> {
     use pathutil::FileType;
     use parsers::ParserRegistry;
 
-    println!("File: {:?}", path);
+    // Check if file exists and get absolute path
+    let abs_path = path.canonicalize()
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "File not found: '{}'\nError: {}\nCurrent directory: {:?}",
+                path.display(),
+                e,
+                std::env::current_dir().unwrap_or_default()
+            )
+        })?;
+
+    println!("File: {:?}", abs_path);
 
     // Detect file type
-    let ft = FileType::from_path(&path);
+    let ft = FileType::from_path(&abs_path);
     println!("Type: {:?}", ft);
     println!("Tree benefit: {}", ft.tree_benefit());
 
@@ -281,8 +292,8 @@ fn info_cmd(path: PathBuf) -> Result<()> {
         println!("Parser: {}", parser.name());
 
         // Parse document
-        let content = std::fs::read_to_string(&path)?;
-        let doc = parser.parse(&content, &path)?;
+        let content = std::fs::read_to_string(&abs_path)?;
+        let doc = parser.parse(&content, &abs_path)?;
 
         println!("\nDocument info:");
         println!("  ID: {}", doc.doc_id);
