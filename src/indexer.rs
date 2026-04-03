@@ -34,6 +34,12 @@ impl Indexer {
 
     /// Index a single file
     pub fn index_file(&mut self, path: &Path) -> Result<Option<Document>> {
+        self.index_file_with_depth(path, 0)
+    }
+
+    /// Index a single file with depth limit
+    /// If max_depth is 0, indexes all nodes (no limit)
+    pub fn index_file_with_depth(&mut self, path: &Path, max_depth: usize) -> Result<Option<Document>> {
         // Detect file type
         let ft = crate::pathutil::FileType::from_path(path);
 
@@ -52,7 +58,7 @@ impl Indexer {
 
         // Add to FTS index
         if let Some(fts) = &mut self.fts {
-            for node in doc.root.iter_dfs() {
+            for node in doc.root.iter_dfs_with_depth(max_depth) {
                 fts.add_document(
                     &node.node_id,
                     &doc.doc_id,
