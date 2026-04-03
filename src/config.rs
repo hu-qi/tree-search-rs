@@ -34,6 +34,21 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Load configuration from a file (TOML or JSON)
+    pub fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let content = std::fs::read_to_string(path)?;
+        
+        // Determine format from extension
+        let config = if path.extension().map_or(false, |ext| ext == "json") {
+            serde_json::from_str(&content)?
+        } else {
+            // Default to TOML
+            toml::from_str(&content)?
+        };
+        
+        Ok(config)
+    }
+
     /// Create config with overrides from environment variables
     pub fn from_env() -> Self {
         let mut config = Self::default();
@@ -67,6 +82,18 @@ impl Config {
         let mut config = Self::from_env();
         config.db_path = project_dir.into().join(".treesearch.db");
         config
+    }
+
+    /// Merge with another config, where self takes precedence (for CLI overrides)
+    pub fn merge(self, other: Self) -> Self {
+        Self {
+            db_path: other.db_path,
+            max_nodes_per_doc: other.max_nodes_per_doc,
+            max_files: other.max_files,
+            search_mode: other.search_mode,
+            add_description: other.add_description,
+            index_dir: other.index_dir,
+        }
     }
 }
 
