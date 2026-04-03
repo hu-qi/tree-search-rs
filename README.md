@@ -18,6 +18,23 @@ cargo install tree-search-rs
 
 ## Usage
 
+### Getting Help
+
+```bash
+# Show help for all commands
+treesearch --help
+treesearch -h
+
+# Show help for a specific command
+treesearch search --help
+treesearch index --help
+treesearch info --help
+
+# Show version
+treesearch --version
+treesearch -V
+```
+
 ### Quick Search
 
 ```bash
