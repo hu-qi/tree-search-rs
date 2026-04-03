@@ -124,11 +124,27 @@ fn search_cmd(
         let index = FtsIndex::open(&db_path)?;
         let hits = index.search(&query, limit)?;
 
-        if hits.is_empty() {
+        // Filter hits based on ignore patterns
+        let filtered_hits: Vec<_> = if !ignore.is_empty() {
+            use glob::Pattern;
+            hits.into_iter().filter(|hit| {
+                // Check if the hit's document path matches any ignore pattern
+                let path_str = hit.node_id.split("::").next().unwrap_or(&hit.node_id);
+                !ignore.iter().any(|pattern| {
+                    Pattern::new(pattern)
+                        .map(|p| p.matches(path_str))
+                        .unwrap_or(false)
+                })
+            }).collect()
+        } else {
+            hits
+        };
+
+        if filtered_hits.is_empty() {
             println!("No results found.");
         } else {
-            println!("\nFound {} results:\n", hits.len());
-            for (i, hit) in hits.iter().enumerate() {
+            println!("\nFound {} results:\n", filtered_hits.len());
+            for (i, hit) in filtered_hits.iter().enumerate() {
                 println!("{}. {} (score: {:.3})", i + 1, hit.title, hit.score);
                 println!("   Node: {}", hit.node_id);
                 println!();
