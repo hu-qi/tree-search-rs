@@ -44,6 +44,9 @@ enum Commands {
         /// Maximum results
         #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
+        /// Maximum depth to search (0 = no limit)
+        #[arg(long, default_value = "0")]
+        max_depth: usize,
     },
     /// Build index
     Index {
@@ -74,8 +77,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Search { query, path, mode, db, limit } => {
-            search_cmd(query, path, mode, db, limit)?;
+        Commands::Search { query, path, mode, db, limit, max_depth } => {
+            search_cmd(query, path, mode, db, limit, max_depth)?;
         }
         Commands::Index { paths, db, max_nodes, max_files } => {
             index_cmd(paths, db, max_nodes, max_files)?;
@@ -94,6 +97,7 @@ fn search_cmd(
     mode: SearchModeConfig,
     db: Option<PathBuf>,
     limit: usize,
+    max_depth: usize,
 ) -> Result<()> {
     use fts::FtsIndex;
     use search::SearchEngine;
@@ -168,7 +172,7 @@ fn search_cmd(
         index.begin_write()?;
 
         for doc in &documents {
-            for node in doc.root.iter_dfs() {
+            for node in doc.root.iter_dfs_with_depth(max_depth) {
                 index.add_document(
                     &node.node_id,
                     &doc.doc_id,
