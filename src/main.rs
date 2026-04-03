@@ -22,6 +22,10 @@ use search::SearchMode;
 #[command(about = "Tree-aware document search engine")]
 #[command(version)]
 struct Cli {
+    /// Enable verbose output
+    #[arg(short, long, global = true)]
+    verbose: bool,
+    
     #[command(subcommand)]
     command: Commands,
 }
@@ -68,20 +72,28 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt::init();
-
     let cli = Cli::parse();
+
+    // Initialize logging based on verbose flag
+    if cli.verbose {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
+    }
 
     match cli.command {
         Commands::Search { query, path, mode, db, limit } => {
-            search_cmd(query, path, mode, db, limit)?;
+            search_cmd(query, path, mode, db, limit, cli.verbose)?;
         }
         Commands::Index { paths, db, max_nodes, max_files } => {
-            index_cmd(paths, db, max_nodes, max_files)?;
+            index_cmd(paths, db, max_nodes, max_files, cli.verbose)?;
         }
         Commands::Info { path } => {
-            info_cmd(path)?;
+            info_cmd(path, cli.verbose)?;
         }
     }
 
@@ -94,13 +106,17 @@ fn search_cmd(
     mode: SearchModeConfig,
     db: Option<PathBuf>,
     limit: usize,
+    verbose: bool,
 ) -> Result<()> {
     use fts::FtsIndex;
     use search::SearchEngine;
 
     println!("Searching for: {}", query);
-    println!("Path: {:?}", path);
-    println!("Mode: {}", mode);
+    if verbose {
+        println!("Path: {:?}", path);
+        println!("Mode: {}", mode);
+        println!("Limit: {}", limit);
+    }
 
     // Determine search mode
     let search_mode = match mode {
@@ -112,9 +128,18 @@ fn search_cmd(
     // Check if index exists
     let db_path = db.unwrap_or_else(|| path.join(".treesearch.db"));
 
+    if verbose {
+        println!("Database path: {:?}", db_path);
+    }
+
     if db_path.exists() {
         // Use existing index
         let index = FtsIndex::open(&db_path)?;
+        
+        if verbose {
+            println!("Using existing index at {:?}", db_path);
+        }
+        
         let hits = index.search(&query, limit)?;
 
         if hits.is_empty() {
@@ -124,6 +149,9 @@ fn search_cmd(
             for (i, hit) in hits.iter().enumerate() {
                 println!("{}. {} (score: {:.3})", i + 1, hit.title, hit.score);
                 println!("   Node: {}", hit.node_id);
+                if verbose {
+                    println!("   Document: {}", hit.doc_id);
+                }
                 println!();
             }
         }
@@ -144,6 +172,10 @@ fn search_cmd(
             return Ok(());
         }
 
+        if verbose {
+            println!("Discovered {} files", files.len());
+        }
+
         println!("Found {} files, searching...", files.len());
 
         // Parse documents
@@ -156,6 +188,9 @@ fn search_cmd(
                 if let Ok(content) = std::fs::read_to_string(file) {
                     if let Ok(doc) = parser.parse(&content, file) {
                         documents.push(doc);
+                        if verbose {
+                            tracing::debug!("Parsed: {:?}", file);
+                        }
                     }
                 }
             }
@@ -166,6 +201,10 @@ fn search_cmd(
         // Create in-memory index
         let mut index = FtsIndex::create_in_memory()?;
         index.begin_write()?;
+
+        if verbose {
+            println!("Building in-memory index...");
+        }
 
         for doc in &documents {
             for node in doc.root.iter_dfs() {
@@ -194,6 +233,9 @@ fn search_cmd(
             for (i, hit) in hits.iter().enumerate() {
                 println!("{}. {} (score: {:.3})", i + 1, hit.title, hit.score);
                 println!("   Node: {}", hit.node_id);
+                if verbose {
+                    println!("   Document: {}", hit.doc_id);
+                }
                 println!();
             }
         }
@@ -207,12 +249,17 @@ fn index_cmd(
     db: Option<PathBuf>,
     max_nodes: usize,
     max_files: usize,
+    verbose: bool,
 ) -> Result<()> {
     use indexer::Indexer;
     use pathutil::{discover_files, DiscoveryOptions};
 
     println!("Building index...");
-    println!("Paths: {:?}", paths);
+    if verbose {
+        println!("Paths: {:?}", paths);
+        println!("Max nodes per doc: {}", max_nodes);
+        println!("Max files: {}", max_files);
+    }
 
     // Build config
     let mut config = Config::default();
@@ -223,6 +270,10 @@ fn index_cmd(
         config.db_path = db_path;
     } else if let Some(first_path) = paths.first() {
         config.db_path = first_path.join(".treesearch.db");
+    }
+
+    if verbose {
+        println!("Database path: {:?}", config.db_path);
     }
 
     // Discover files
@@ -249,7 +300,9 @@ fn index_cmd(
     for file in &all_files {
         if let Some(doc) = indexer.index_file(file)? {
             count += 1;
-            if count % 100 == 0 {
+            if verbose {
+                println!("[{}/{}] Indexed: {:?}", count, all_files.len(), file);
+            } else if count % 100 == 0 {
                 println!("Indexed {} documents...", count);
             }
         }
@@ -264,7 +317,7 @@ fn index_cmd(
     Ok(())
 }
 
-fn info_cmd(path: PathBuf) -> Result<()> {
+fn info_cmd(path: PathBuf, verbose: bool) -> Result<()> {
     use pathutil::FileType;
     use parsers::ParserRegistry;
 
@@ -291,6 +344,17 @@ fn info_cmd(path: PathBuf) -> Result<()> {
         println!("  Tree depth: {}", doc.tree_depth());
         println!("  Node count: {}", doc.count_nodes());
         println!("  Tree benefit: {}", doc.tree_benefit());
+        
+        if verbose {
+            println!("\nVerbose info:");
+            println!("  File size: {} bytes", content.len());
+            // Count nodes by type
+            let mut node_types = std::collections::HashMap::new();
+            for node in doc.root.iter_dfs() {
+                *node_types.entry(node.node_type.clone()).or_insert(0) += 1;
+            }
+            println!("  Node types: {:?}", node_types);
+        }
     } else {
         println!("No parser available for this file type.");
     }
