@@ -14,7 +14,7 @@ mod pathutil;
 mod heuristics;
 mod parsers;
 
-use config::{Config, SearchModeConfig};
+use config::{Config, SearchModeConfig, SortBy};
 use search::SearchMode;
 
 #[derive(Parser)]
@@ -44,6 +44,9 @@ enum Commands {
         /// Maximum results
         #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
+        /// Sort results by (none, name, score)
+        #[arg(long, default_value = "none")]
+        sort: SortBy,
     },
     /// Build index
     Index {
@@ -74,8 +77,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Search { query, path, mode, db, limit } => {
-            search_cmd(query, path, mode, db, limit)?;
+        Commands::Search { query, path, mode, db, limit, sort } => {
+            search_cmd(query, path, mode, db, limit, sort)?;
         }
         Commands::Index { paths, db, max_nodes, max_files } => {
             index_cmd(paths, db, max_nodes, max_files)?;
@@ -94,6 +97,7 @@ fn search_cmd(
     mode: SearchModeConfig,
     db: Option<PathBuf>,
     limit: usize,
+    sort: SortBy,
 ) -> Result<()> {
     use fts::FtsIndex;
     use search::SearchEngine;
@@ -115,7 +119,10 @@ fn search_cmd(
     if db_path.exists() {
         // Use existing index
         let index = FtsIndex::open(&db_path)?;
-        let hits = index.search(&query, limit)?;
+        let mut hits = index.search(&query, limit)?;
+
+        // Apply sorting
+        apply_sort(&mut hits, sort);
 
         if hits.is_empty() {
             println!("No results found.");
@@ -185,7 +192,10 @@ fn search_cmd(
         index.reload()?;
 
         // Search
-        let hits = index.search(&query, limit)?;
+        let mut hits = index.search(&query, limit)?;
+
+        // Apply sorting
+        apply_sort(&mut hits, sort);
 
         if hits.is_empty() {
             println!("No results found.");
@@ -200,6 +210,25 @@ fn search_cmd(
     }
 
     Ok(())
+}
+
+/// Apply sorting to search hits
+fn apply_sort(hits: &mut [fts::SearchHit], sort: SortBy) {
+    use fts::SearchHit;
+    
+    match sort {
+        SortBy::None => {
+            // No sorting, keep relevance order from search engine
+        }
+        SortBy::Name => {
+            // Sort by title alphabetically
+            hits.sort_by(|a, b| a.title.cmp(&b.title));
+        }
+        SortBy::Score => {
+            // Sort by score (highest first)
+            hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        }
+    }
 }
 
 fn index_cmd(
