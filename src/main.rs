@@ -44,6 +44,9 @@ enum Commands {
         /// Maximum results
         #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
+        /// Ignore patterns (glob)
+        #[arg(short, long)]
+        ignore: Vec<String>,
     },
     /// Build index
     Index {
@@ -59,6 +62,9 @@ enum Commands {
         /// Maximum files to index
         #[arg(long, default_value = "10000")]
         max_files: usize,
+        /// Ignore patterns (glob)
+        #[arg(short, long)]
+        ignore: Vec<String>,
     },
     /// Show document info
     Info {
@@ -74,11 +80,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Search { query, path, mode, db, limit } => {
-            search_cmd(query, path, mode, db, limit)?;
+        Commands::Search { query, path, mode, db, limit, ignore } => {
+            search_cmd(query, path, mode, db, limit, ignore)?;
         }
-        Commands::Index { paths, db, max_nodes, max_files } => {
-            index_cmd(paths, db, max_nodes, max_files)?;
+        Commands::Index { paths, db, max_nodes, max_files, ignore } => {
+            index_cmd(paths, db, max_nodes, max_files, ignore)?;
         }
         Commands::Info { path } => {
             info_cmd(path)?;
@@ -94,6 +100,7 @@ fn search_cmd(
     mode: SearchModeConfig,
     db: Option<PathBuf>,
     limit: usize,
+    ignore: Vec<String>,
 ) -> Result<()> {
     use fts::FtsIndex;
     use search::SearchEngine;
@@ -117,11 +124,27 @@ fn search_cmd(
         let index = FtsIndex::open(&db_path)?;
         let hits = index.search(&query, limit)?;
 
-        if hits.is_empty() {
+        // Filter hits based on ignore patterns
+        let filtered_hits: Vec<_> = if !ignore.is_empty() {
+            use glob::Pattern;
+            hits.into_iter().filter(|hit| {
+                // Check if the hit's document path matches any ignore pattern
+                let path_str = hit.node_id.split("::").next().unwrap_or(&hit.node_id);
+                !ignore.iter().any(|pattern| {
+                    Pattern::new(pattern)
+                        .map(|p| p.matches(path_str))
+                        .unwrap_or(false)
+                })
+            }).collect()
+        } else {
+            hits
+        };
+
+        if filtered_hits.is_empty() {
             println!("No results found.");
         } else {
-            println!("\nFound {} results:\n", hits.len());
-            for (i, hit) in hits.iter().enumerate() {
+            println!("\nFound {} results:\n", filtered_hits.len());
+            for (i, hit) in filtered_hits.iter().enumerate() {
                 println!("{}. {} (score: {:.3})", i + 1, hit.title, hit.score);
                 println!("   Node: {}", hit.node_id);
                 println!();
@@ -136,7 +159,8 @@ fn search_cmd(
         println!("No index found. Performing quick search (may be slow)...");
 
         // Discover files
-        let options = DiscoveryOptions::default();
+        let mut options = DiscoveryOptions::default();
+        options.exclude.extend(ignore);
         let files = discover_files(&path, &options)?;
 
         if files.is_empty() {
@@ -207,6 +231,7 @@ fn index_cmd(
     db: Option<PathBuf>,
     max_nodes: usize,
     max_files: usize,
+    ignore: Vec<String>,
 ) -> Result<()> {
     use indexer::Indexer;
     use pathutil::{discover_files, DiscoveryOptions};
@@ -226,7 +251,8 @@ fn index_cmd(
     }
 
     // Discover files
-    let options = DiscoveryOptions::default();
+    let mut options = DiscoveryOptions::default();
+    options.exclude.extend(ignore);
     let mut all_files = Vec::new();
 
     for path in &paths {
