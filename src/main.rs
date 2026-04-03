@@ -22,6 +22,10 @@ use search::SearchMode;
 #[command(about = "Tree-aware document search engine")]
 #[command(version)]
 struct Cli {
+    /// Configuration file path (TOML or JSON)
+    #[arg(short, long, global = true)]
+    config: Option<PathBuf>,
+    
     #[command(subcommand)]
     command: Commands,
 }
@@ -73,12 +77,20 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // Load config from file if provided
+    let file_config = if let Some(config_path) = &cli.config {
+        Some(Config::from_file(config_path)
+            .map_err(|e| anyhow::anyhow!("Failed to load config file: {}", e))?)
+    } else {
+        None
+    };
+
     match cli.command {
         Commands::Search { query, path, mode, db, limit } => {
-            search_cmd(query, path, mode, db, limit)?;
+            search_cmd(query, path, mode, db, limit, file_config)?;
         }
         Commands::Index { paths, db, max_nodes, max_files } => {
-            index_cmd(paths, db, max_nodes, max_files)?;
+            index_cmd(paths, db, max_nodes, max_files, file_config)?;
         }
         Commands::Info { path } => {
             info_cmd(path)?;
@@ -94,6 +106,7 @@ fn search_cmd(
     mode: SearchModeConfig,
     db: Option<PathBuf>,
     limit: usize,
+    file_config: Option<Config>,
 ) -> Result<()> {
     use fts::FtsIndex;
     use search::SearchEngine;
@@ -109,8 +122,13 @@ fn search_cmd(
         SearchModeConfig::Tree => SearchMode::Tree,
     };
 
-    // Check if index exists
-    let db_path = db.unwrap_or_else(|| path.join(".treesearch.db"));
+    // Determine db_path: CLI > config file > default
+    let db_path = db.unwrap_or_else(|| {
+        file_config
+            .as_ref()
+            .map(|c| c.db_path.clone())
+            .unwrap_or_else(|| path.join(".treesearch.db"))
+    });
 
     if db_path.exists() {
         // Use existing index
@@ -207,6 +225,7 @@ fn index_cmd(
     db: Option<PathBuf>,
     max_nodes: usize,
     max_files: usize,
+    file_config: Option<Config>,
 ) -> Result<()> {
     use indexer::Indexer;
     use pathutil::{discover_files, DiscoveryOptions};
@@ -214,15 +233,20 @@ fn index_cmd(
     println!("Building index...");
     println!("Paths: {:?}", paths);
 
-    // Build config
-    let mut config = Config::default();
+    // Build config: start with file config or default
+    let mut config = file_config.unwrap_or_default();
+    
+    // Apply CLI overrides
     config.max_nodes_per_doc = max_nodes;
     config.max_files = max_files;
 
     if let Some(db_path) = db {
         config.db_path = db_path;
-    } else if let Some(first_path) = paths.first() {
-        config.db_path = first_path.join(".treesearch.db");
+    } else if config.db_path == PathBuf::from(".treesearch.db") {
+        // Only use default if not set by config file
+        if let Some(first_path) = paths.first() {
+            config.db_path = first_path.join(".treesearch.db");
+        }
     }
 
     // Discover files
