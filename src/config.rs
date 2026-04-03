@@ -100,3 +100,37 @@ impl std::str::FromStr for SearchModeConfig {
         }
     }
 }
+
+/// Sort by option for search results
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SortBy {
+    /// No sorting (relevance order from search engine)
+    None,
+    /// Sort by title/name (alphabetical)
+    Name,
+    /// Sort by relevance score (highest first)
+    Score,
+}
+
+impl std::fmt::Display for SortBy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "none"),
+            Self::Name => write!(f, "name"),
+            Self::Score => write!(f, "score"),
+        }
+    }
+}
+
+impl std::str::FromStr for SortBy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "none" => Ok(Self::None),
+            "name" => Ok(Self::Name),
+            "score" => Ok(Self::Score),
+            _ => Err(format!("Invalid sort option: {}. Valid options: none, name, score", s)),
+        }
+    }
+}
