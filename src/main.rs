@@ -34,13 +34,14 @@ enum Commands {
     /// Examples:
     ///   treesearch search "function" ./src
     ///   treesearch search "README" . --mode tree -n 20
+    #[command(verbatim_doc_comment)]
     Search {
         /// Search query string
         query: String,
-        /// Path to search (default: current directory)
+        /// Path to search
         #[arg(default_value = ".")]
         path: PathBuf,
-        /// Search mode: auto (default), flat, or tree
+        /// Search mode: auto, flat, or tree
         #[arg(short, long, default_value = "auto")]
         mode: SearchModeConfig,
         /// Database path (default: .treesearch.db in search path)
@@ -55,6 +56,7 @@ enum Commands {
     /// Examples:
     ///   treesearch index ./src ./docs
     ///   treesearch index . --max-files 50000
+    #[command(verbatim_doc_comment)]
     Index {
         /// Paths to index
         #[arg(required = true)]
@@ -73,6 +75,7 @@ enum Commands {
     ///
     /// Examples:
     ///   treesearch info README.md
+    #[command(verbatim_doc_comment)]
     Info {
         /// Path to document
         path: PathBuf,
