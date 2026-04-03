@@ -265,8 +265,19 @@ fn index_cmd(
 }
 
 fn info_cmd(path: PathBuf) -> Result<()> {
+    use anyhow::Context;
     use pathutil::FileType;
     use parsers::ParserRegistry;
+
+    // Check if file exists and provide helpful error message
+    if !path.exists() {
+        let abs_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        anyhow::bail!(
+            "File not found: {:?}\n\nPlease ensure the file exists and the path is correct.\nCurrent working directory: {:?}",
+            abs_path,
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        );
+    }
 
     println!("File: {:?}", path);
 
@@ -281,7 +292,8 @@ fn info_cmd(path: PathBuf) -> Result<()> {
         println!("Parser: {}", parser.name());
 
         // Parse document
-        let content = std::fs::read_to_string(&path)?;
+        let content = std::fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read file: {:?}", path))?;
         let doc = parser.parse(&content, &path)?;
 
         println!("\nDocument info:");
