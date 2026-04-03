@@ -119,12 +119,17 @@ fn search_cmd(
     if db_path.exists() {
         // Use existing index
         let index = FtsIndex::open(&db_path)?;
-        let mut hits = index.search(&query, limit)?;
+        
+        // Fetch larger candidate set when filter is present
+        let search_limit = if filter.is_some() { limit.max(1000) } else { limit };
+        let mut hits = index.search(&query, search_limit)?;
 
-        // Apply filter if provided
+        // Apply filter if provided (case-insensitive)
         if let Some(ref filter_pattern) = filter {
-            hits.retain(|hit| hit.title.contains(filter_pattern));
+            let pattern = filter_pattern.to_lowercase();
+            hits.retain(|hit| hit.title.to_lowercase().contains(&pattern));
         }
+        hits.truncate(limit);
 
         if hits.is_empty() {
             println!("No results found.");
@@ -194,12 +199,16 @@ fn search_cmd(
         index.reload()?;
 
         // Search
-        let mut hits = index.search(&query, limit)?;
+        // Fetch larger candidate set when filter is present
+        let search_limit = if filter.is_some() { limit.max(1000) } else { limit };
+        let mut hits = index.search(&query, search_limit)?;
 
-        // Apply filter if provided
+        // Apply filter if provided (case-insensitive)
         if let Some(ref filter_pattern) = filter {
-            hits.retain(|hit| hit.title.contains(filter_pattern));
+            let pattern = filter_pattern.to_lowercase();
+            hits.retain(|hit| hit.title.to_lowercase().contains(&pattern));
         }
+        hits.truncate(limit);
 
         if hits.is_empty() {
             println!("No results found.");
