@@ -44,6 +44,9 @@ enum Commands {
         /// Maximum results
         #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
+        /// Exclude patterns (glob)
+        #[arg(short, long = "exclude")]
+        excludes: Vec<String>,
     },
     /// Build index
     Index {
@@ -59,6 +62,9 @@ enum Commands {
         /// Maximum files to index
         #[arg(long, default_value = "10000")]
         max_files: usize,
+        /// Exclude patterns (glob)
+        #[arg(short, long = "exclude")]
+        excludes: Vec<String>,
     },
     /// Show document info
     Info {
@@ -74,11 +80,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Search { query, path, mode, db, limit } => {
-            search_cmd(query, path, mode, db, limit)?;
+        Commands::Search { query, path, mode, db, limit, excludes } => {
+            search_cmd(query, path, mode, db, limit, excludes)?;
         }
-        Commands::Index { paths, db, max_nodes, max_files } => {
-            index_cmd(paths, db, max_nodes, max_files)?;
+        Commands::Index { paths, db, max_nodes, max_files, excludes } => {
+            index_cmd(paths, db, max_nodes, max_files, excludes)?;
         }
         Commands::Info { path } => {
             info_cmd(path)?;
@@ -94,6 +100,7 @@ fn search_cmd(
     mode: SearchModeConfig,
     db: Option<PathBuf>,
     limit: usize,
+    excludes: Vec<String>,
 ) -> Result<()> {
     use fts::FtsIndex;
     use search::SearchEngine;
@@ -136,7 +143,10 @@ fn search_cmd(
         println!("No index found. Performing quick search (may be slow)...");
 
         // Discover files
-        let options = DiscoveryOptions::default();
+        let mut options = DiscoveryOptions::default();
+        if !excludes.is_empty() {
+            options.exclude = excludes;
+        }
         let files = discover_files(&path, &options)?;
 
         if files.is_empty() {
@@ -207,6 +217,7 @@ fn index_cmd(
     db: Option<PathBuf>,
     max_nodes: usize,
     max_files: usize,
+    excludes: Vec<String>,
 ) -> Result<()> {
     use indexer::Indexer;
     use pathutil::{discover_files, DiscoveryOptions};
@@ -226,7 +237,10 @@ fn index_cmd(
     }
 
     // Discover files
-    let options = DiscoveryOptions::default();
+    let mut options = DiscoveryOptions::default();
+    if !excludes.is_empty() {
+        options.exclude = excludes;
+    }
     let mut all_files = Vec::new();
 
     for path in &paths {
