@@ -44,6 +44,9 @@ enum Commands {
         /// Maximum results
         #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
+        /// Filter pattern for results (matches against title)
+        #[arg(short, long)]
+        filter: Option<String>,
     },
     /// Build index
     Index {
@@ -74,8 +77,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Search { query, path, mode, db, limit } => {
-            search_cmd(query, path, mode, db, limit)?;
+        Commands::Search { query, path, mode, db, limit, filter } => {
+            search_cmd(query, path, mode, db, limit, filter)?;
         }
         Commands::Index { paths, db, max_nodes, max_files } => {
             index_cmd(paths, db, max_nodes, max_files)?;
@@ -94,6 +97,7 @@ fn search_cmd(
     mode: SearchModeConfig,
     db: Option<PathBuf>,
     limit: usize,
+    filter: Option<String>,
 ) -> Result<()> {
     use fts::FtsIndex;
     use search::SearchEngine;
@@ -115,7 +119,17 @@ fn search_cmd(
     if db_path.exists() {
         // Use existing index
         let index = FtsIndex::open(&db_path)?;
-        let hits = index.search(&query, limit)?;
+        
+        // Fetch larger candidate set when filter is present
+        let search_limit = if filter.is_some() { limit.max(1000) } else { limit };
+        let mut hits = index.search(&query, search_limit)?;
+
+        // Apply filter if provided (case-insensitive)
+        if let Some(ref filter_pattern) = filter {
+            let pattern = filter_pattern.to_lowercase();
+            hits.retain(|hit| hit.title.to_lowercase().contains(&pattern));
+        }
+        hits.truncate(limit);
 
         if hits.is_empty() {
             println!("No results found.");
@@ -185,7 +199,16 @@ fn search_cmd(
         index.reload()?;
 
         // Search
-        let hits = index.search(&query, limit)?;
+        // Fetch larger candidate set when filter is present
+        let search_limit = if filter.is_some() { limit.max(1000) } else { limit };
+        let mut hits = index.search(&query, search_limit)?;
+
+        // Apply filter if provided (case-insensitive)
+        if let Some(ref filter_pattern) = filter {
+            let pattern = filter_pattern.to_lowercase();
+            hits.retain(|hit| hit.title.to_lowercase().contains(&pattern));
+        }
+        hits.truncate(limit);
 
         if hits.is_empty() {
             println!("No results found.");
