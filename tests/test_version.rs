@@ -8,8 +8,10 @@ fn test_version_constant() {
     assert!(!VERSION.is_empty(), "VERSION should not be empty");
     
     // Version should be in semver format (major.minor.patch)
-    let parts: Vec<&str> = VERSION.split('.').collect();
-    assert!(parts.len() >= 2, "VERSION should be in semver format (major.minor.patch)");
+    // Handle pre-release identifiers by splitting on '-' first
+    let version_without_prerelease = VERSION.split('-').next().unwrap_or(VERSION);
+    let parts: Vec<&str> = version_without_prerelease.split('.').collect();
+    assert!(parts.len() >= 3, "VERSION should be in semver format (major.minor.patch)");
     
     // Verify each part is numeric
     for part in &parts {
@@ -19,7 +21,9 @@ fn test_version_constant() {
 
 #[test]
 fn test_version_matches_cargo() {
-    // VERSION should match the version in Cargo.toml
-    // This is automatically set by the env!("CARGO_PKG_VERSION") macro
+    // This test serves as a sanity check that VERSION is accessible from integration tests.
+    // While this may appear to be a tautology (since VERSION is defined using env!("CARGO_PKG_VERSION")),
+    // it verifies that the constant is properly exported and accessible in the test environment.
+    // This provides value by ensuring the public API is correctly set up for external consumers.
     assert_eq!(VERSION, env!("CARGO_PKG_VERSION"));
 }
