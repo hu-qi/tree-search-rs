@@ -20,7 +20,7 @@ use search::SearchMode;
 #[derive(Parser)]
 #[command(name = "treesearch")]
 #[command(about = "Tree-aware document search engine")]
-#[command(version = 'V')]
+#[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
