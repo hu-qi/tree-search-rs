@@ -19,8 +19,9 @@ use search::SearchMode;
 
 #[derive(Parser)]
 #[command(name = "treesearch")]
-#[command(about = "Tree-aware document search engine")]
+#[command(about = "Tree-aware document search engine", long_about = None)]
 #[command(version)]
+#[command(next_line_help = true)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -28,41 +29,51 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Quick search (auto-build index if needed)
+    /// Quick search documents (auto-build index if needed)
+    ///
+    /// This command searches for documents matching the query.
+    /// If no index exists, it will perform a quick search by parsing
+    /// documents on-the-fly (may be slow for large directories).
     Search {
-        /// Search query
+        /// Search query string
         query: String,
-        /// Path to search
+        /// Path to search (default: current directory)
         #[arg(default_value = ".")]
         path: PathBuf,
-        /// Search mode (auto, flat, tree)
-        #[arg(short, long, default_value = "auto")]
+        /// Search mode: auto (detect best mode), flat (direct FTS), or tree (tree-aware)
+        #[arg(short, long, default_value = "auto", value_name = "MODE")]
         mode: SearchModeConfig,
-        /// Database path
+        /// Database path for index storage
         #[arg(short, long)]
         db: Option<PathBuf>,
-        /// Maximum results
+        /// Maximum number of results to display
         #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
     },
-    /// Build index
+    /// Build search index for faster queries
+    ///
+    /// This command builds a persistent index for the specified paths.
+    /// Once indexed, subsequent searches will be much faster.
     Index {
-        /// Paths to index
+        /// Paths to index (one or more directories/files)
         #[arg(required = true)]
         paths: Vec<PathBuf>,
-        /// Database path
+        /// Database path for index storage
         #[arg(short, long)]
         db: Option<PathBuf>,
-        /// Maximum nodes per document
+        /// Maximum nodes per document (limits memory usage)
         #[arg(long, default_value = "1000")]
         max_nodes: usize,
-        /// Maximum files to index
+        /// Maximum files to index (limits total files processed)
         #[arg(long, default_value = "10000")]
         max_files: usize,
     },
-    /// Show document info
+    /// Show detailed information about a document
+    ///
+    /// Displays metadata about a document including its type,
+    /// tree structure, and parsing information.
     Info {
-        /// Path to document
+        /// Path to the document file
         path: PathBuf,
     },
 }
