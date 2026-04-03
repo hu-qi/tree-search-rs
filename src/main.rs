@@ -75,15 +75,14 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Initialize logging based on verbose flag
-    if cli.verbose {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
-            .init();
+    let log_level = if cli.verbose {
+        tracing::Level::DEBUG
     } else {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
-    }
+        tracing::Level::INFO
+    };
+    tracing_subscriber::fmt()
+        .with_max_level(log_level)
+        .init();
 
     match cli.command {
         Commands::Search { query, path, mode, db, limit } => {
@@ -188,9 +187,7 @@ fn search_cmd(
                 if let Ok(content) = std::fs::read_to_string(file) {
                     if let Ok(doc) = parser.parse(&content, file) {
                         documents.push(doc);
-                        if verbose {
-                            tracing::debug!("Parsed: {:?}", file);
-                        }
+                        tracing::debug!("Parsed: {:?}", file);
                     }
                 }
             }
@@ -348,10 +345,19 @@ fn info_cmd(path: PathBuf, verbose: bool) -> Result<()> {
         if verbose {
             println!("\nVerbose info:");
             println!("  File size: {} bytes", content.len());
-            // Count nodes by type
+            // Count nodes by type (computed from content fields)
             let mut node_types = std::collections::HashMap::new();
             for node in doc.root.iter_dfs() {
-                *node_types.entry(node.node_type.clone()).or_insert(0) += 1;
+                let node_kind = if node.code.is_some() {
+                    "code"
+                } else if node.front_matter.is_some() {
+                    "front_matter"
+                } else if !node.text.is_empty() {
+                    "text"
+                } else {
+                    "structural"
+                };
+                *node_types.entry(node_kind).or_insert(0) += 1;
             }
             println!("  Node types: {:?}", node_types);
         }
