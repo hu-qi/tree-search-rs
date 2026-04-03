@@ -122,7 +122,16 @@ fn search_cmd(
     if db_path.exists() {
         // Use existing index
         let index = FtsIndex::open(&db_path)?;
-        let hits = index.search(&query, limit)?;
+        let mut hits = index.search(&query, limit)?;
+
+        // Apply exclusion filters to hits
+        if !excludes.is_empty() {
+            use pathutil::matches_pattern;
+            hits.retain(|hit| {
+                let path = PathBuf::from(&hit.title);
+                !excludes.iter().any(|pattern| matches_pattern(&path, pattern))
+            });
+        }
 
         if hits.is_empty() {
             println!("No results found.");
@@ -144,9 +153,7 @@ fn search_cmd(
 
         // Discover files
         let mut options = DiscoveryOptions::default();
-        if !excludes.is_empty() {
-            options.exclude = excludes;
-        }
+        options.exclude.extend(excludes);
         let files = discover_files(&path, &options)?;
 
         if files.is_empty() {
@@ -238,9 +245,7 @@ fn index_cmd(
 
     // Discover files
     let mut options = DiscoveryOptions::default();
-    if !excludes.is_empty() {
-        options.exclude = excludes;
-    }
+    options.exclude.extend(excludes);
     let mut all_files = Vec::new();
 
     for path in &paths {
