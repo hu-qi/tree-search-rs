@@ -44,6 +44,9 @@ enum Commands {
         /// Maximum results
         #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
+        /// Maximum depth to search (0 = no limit)
+        #[arg(long, default_value = "0")]
+        max_depth: usize,
     },
     /// Build index
     Index {
@@ -59,6 +62,9 @@ enum Commands {
         /// Maximum files to index
         #[arg(long, default_value = "10000")]
         max_files: usize,
+        /// Maximum depth to index (0 = no limit)
+        #[arg(long, default_value = "0")]
+        max_depth: usize,
     },
     /// Show document info
     Info {
@@ -74,11 +80,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Search { query, path, mode, db, limit } => {
-            search_cmd(query, path, mode, db, limit)?;
+        Commands::Search { query, path, mode, db, limit, max_depth } => {
+            search_cmd(query, path, mode, db, limit, max_depth)?;
         }
-        Commands::Index { paths, db, max_nodes, max_files } => {
-            index_cmd(paths, db, max_nodes, max_files)?;
+        Commands::Index { paths, db, max_nodes, max_files, max_depth } => {
+            index_cmd(paths, db, max_nodes, max_files, max_depth)?;
         }
         Commands::Info { path } => {
             info_cmd(path)?;
@@ -94,6 +100,7 @@ fn search_cmd(
     mode: SearchModeConfig,
     db: Option<PathBuf>,
     limit: usize,
+    max_depth: usize,
 ) -> Result<()> {
     use fts::FtsIndex;
     use search::SearchEngine;
@@ -112,7 +119,11 @@ fn search_cmd(
     // Check if index exists
     let db_path = db.unwrap_or_else(|| path.join(".treesearch.db"));
 
-    if db_path.exists() {
+    // Skip index if max_depth is set (to ensure consistent behavior)
+    // When max_depth > 0, we need to parse documents fresh to apply depth filtering
+    let use_index = db_path.exists() && max_depth == 0;
+
+    if use_index {
         // Use existing index
         let index = FtsIndex::open(&db_path)?;
         let hits = index.search(&query, limit)?;
@@ -168,7 +179,7 @@ fn search_cmd(
         index.begin_write()?;
 
         for doc in &documents {
-            for node in doc.root.iter_dfs() {
+            for node in doc.root.iter_dfs_with_depth(max_depth) {
                 index.add_document(
                     &node.node_id,
                     &doc.doc_id,
@@ -207,12 +218,16 @@ fn index_cmd(
     db: Option<PathBuf>,
     max_nodes: usize,
     max_files: usize,
+    max_depth: usize,
 ) -> Result<()> {
     use indexer::Indexer;
     use pathutil::{discover_files, DiscoveryOptions};
 
     println!("Building index...");
     println!("Paths: {:?}", paths);
+    if max_depth > 0 {
+        println!("Max depth: {}", max_depth);
+    }
 
     // Build config
     let mut config = Config::default();
@@ -247,7 +262,7 @@ fn index_cmd(
 
     let mut count = 0;
     for file in &all_files {
-        if let Some(doc) = indexer.index_file(file)? {
+        if let Some(doc) = indexer.index_file_with_depth(file, max_depth)? {
             count += 1;
             if count % 100 == 0 {
                 println!("Indexed {} documents...", count);
